@@ -1,5 +1,10 @@
-local runLater = require("runLater")
+local runLater = require("utils").runLater
+local Piece = require("piece")
 
+---@class Toast.TintablePiece: Toast.Piece
+local Tintable = setmetatable({}, { __index = Piece.Piece })
+Tintable.__index = Tintable
+Piece.Tintable = Tintable
 --#region
 
 ---@generic K, V
@@ -18,30 +23,11 @@ end
 
 --#region Toast.Defaults
 
----Default Palettes for the 16 indexed colors
----@type table<Toast.IndexedColors, Vector4>
-local DEFAULT_PALETTE = {
-    RED = { "843612" },
-    ORANGE = { "e15a25" },
-    YELLOW = { "f9ca24" },
-    LIME = { "88bd0d" },
-    GREEN = { "60a220" },
-    LIGHT_BLUE = { "3fc4dc" },
-    CYAN = { "4bd5cf" },
-    BLUE = { "3879e3" },
-    PURPLE = { "8f27d1" },
-    MAGENTA = { "a429ca" },
-    PINK = { "f88da7" },
-    BROWN = { "7f431a" },
-    LIGHT_GRAY = { "dbdbdb" },
-    GRAY = { "babcbd" },
-    BLACK = { "181a1f" },
-    WHITE = { "ffffff" },
-}
+local EMPTY_VECTOR = vec(0, 0, 0)
+
 ---@alias Toast.Layer
 ---| "PRIMARY"
 ---| "SECONDARY"
-
 
 --- Colors meant to be replaced when using a `TintablePiece`, add more if you use more than 5 colors per piece (you criminal)
 ---@type table<Toast.Layer, Toast.Palette>
@@ -49,38 +35,52 @@ local DEFAULT_MASK = {
     PRIMARY = { ["f3f3f3"] = 1, ["e7e7e7"] = 2, ["cdcdcd"] = 3, ["b4b4b4"] = 4, ["9b9b9b"] = 5 },
     SECONDARY = { ["808080"] = 1, ["666666"] = 2, ["4d4d4d"] = 3, ["333333"] = 4, ["1a1a1a"] = 5 },
 }
-
----Default names of colors (aka. dye system)
----@enum (key) Toast.IndexedColors
-local DEFAULT_COLORS = {
-    RED = 1,
-    ORANGE = 2,
-    YELLOW = 3,
-    LIME = 4,
-    GREEN = 5,
-    LIGHT_BLUE = 6,
-    CYAN = 7,
-    BLUE = 8,
-    PURPLE = 9,
-    MAGENTA = 10,
-    PINK = 11,
-    BROWN = 12,
-    LIGHT_GRAY = 13,
-    GRAY = 14,
-    BLACK = 15,
-    WHITE = 16,
-}
-local COLOR_TO_INT = SwapValues(DEFAULT_COLORS)
-
-
+-- ! Discontinued for now !
+-- ---Default names of colors (aka. dye system)
+-- ---@enum (key) Toast.IndexedColors
+-- local DEFAULT_COLORS = {
+--     RED = 1,
+--     ORANGE = 2,
+--     YELLOW = 3,
+--     LIME = 4,
+--     GREEN = 5,
+--     LIGHT_BLUE = 6,
+--     CYAN = 7,
+--     BLUE = 8,
+--     PURPLE = 9,
+--     MAGENTA = 10,
+--     PINK = 11,
+--     BROWN = 12,
+--     LIGHT_GRAY = 13,
+--     GRAY = 14,
+--     BLACK = 15,
+--     WHITE = 16,
+-- }
+-- local COLOR_TO_INT = SwapValues(DEFAULT_COLORS)
+--
+-- ---Default Palettes for the 16 indexed colors
+-- ---@type table<Toast.IndexedColors, Vector4>
+-- local DEFAULT_PALETTE = {
+--     RED = { "843612" },
+--     ORANGE = { "e15a25" },
+--     YELLOW = { "f9ca24" },
+--     LIME = { "88bd0d" },
+--     GREEN = { "60a220" },
+--     LIGHT_BLUE = { "3fc4dc" },
+--     CYAN = { "4bd5cf" },
+--     BLUE = { "3879e3" },
+--     PURPLE = { "8f27d1" },
+--     MAGENTA = { "a429ca" },
+--     PINK = { "f88da7" },
+--     BROWN = { "7f431a" },
+--     LIGHT_GRAY = { "dbdbdb" },
+--     GRAY = { "babcbd" },
+--     BLACK = { "181a1f" },
+--     WHITE = { "ffffff" },
+-- }
 --#endregion Toast.Defaults
 
-
-local band = bit32.band
-local rshift = bit32.rshift
-
 ---@alias RGB Vector3
-
 
 local Recolor = {}
 
@@ -151,7 +151,6 @@ local function generatePalette(input)
         hueOffset = hueOffset * -1
     end
 
-
     local offset = vec(hueOffset / 360, -satOffset / 100, valueOffset / 100)
     for i = 1, 4 do --- I do 4 extra colors (5 total) cause that's my design philosophy, you could probably do more but it'll approach #000000 quickly
         if color.y >= 1 then valueOffset = -valueOffset end
@@ -165,8 +164,96 @@ local function generatePalette(input)
     return palette
 end
 
-for color, initial in pairs(DEFAULT_PALETTE) do
-    DEFAULT_PALETTE[color] = generatePalette(vectors.hexToRGB(initial[1])) ---@diagnostic disable-line
+-- for color, initial in pairs(DEFAULT_PALETTE) do
+--     DEFAULT_PALETTE[color] = generatePalette(vectors.hexToRGB(initial[1])) ---@diagnostic disable-line
+-- end
+
+local function apply(color, inPalette, layer)
+    if inPalette[layer[vectors.rgbToHex(color.xyz)]] then
+        return vectors.hexToRGB(inPalette[layer[vectors.rgbToHex(color.xyz)]]):augmented(1)
+    end
 end
+
+local function remap(color, tex, bounds, layer)
+    local inPalette = type(color) == "table" and color or generatePalette(color)
+    splitTexture(tex, bounds, function(col) apply(col, inPalette, DEFAULT_MASK[layer]) end)
+end
+
+--#region Toast.Tintable
+
+---@type table<Toast.TintablePiece.Mode, Toast.TintablePiece.Method>
+local tintMethods = {
+    SIMPLE = function(piece, value)
+        for _, modelPart in pairs(piece.options.modelParts) do
+            modelPart:setColor(value)
+        end
+    end,
+    RGB = function(piece, value, layer)
+        remap(value, piece.options.texture, piece.options.bounds, layer)
+    end,
+    PALETTE = function(piece, index, layer)
+        if not piece.options.palette then return end --- That's on y'all smh I made the instructions clear
+        remap(piece.options.palette[index], piece.options.texture, piece.options.bounds, layer)
+    end
+}
+
+function Tintable:new(name, options)
+    local inst = Piece.Piece.new(self, name, options)
+    inst.tint = tintMethods[inst.options.tintMethod] or tintMethods.SIMPLE
+    return inst
+end
+
+function Tintable:updateColor(primary, secondary)
+    for layer, value in pairs({ PRIMARY = primary, SECONDARY = secondary }) do
+        if type(value) == "Vector3" and value == EMPTY_VECTOR then goto continue end
+        if (value == self.options[layer:lower()]) then goto continue end
+        self:tint(value, layer)
+        ::continue::
+    end
+end
+
+function Tintable:serialize(buf)
+    Piece.serialize(self, buf)
+    local options = self.options
+
+    -- These wouldn't need hex codes, but rather table indices (using 1 byte for both, max 16 colors in palette)
+    -- If you need more, consider using HEX, or SIMPLE, as you can literally give it a hex
+    -- Or modify it to use a full byte
+    if (options.tintMethod == "INDEXED") or (options.tintMethod == "PALETTE") then
+        buf:write(bit32.bor(bit32.rshift(options.primary or 0, 4) or 0, options.secondary or 0))
+    else
+        local primary, secondary = options.primary, options.secondary
+        local flag = (primary ~= 0 and 1 or 0) + (secondary ~= 0 and 2 or 0)
+        buf:write(flag)
+        if primary then
+            Recolor.serializeColor(primary, buf)
+        end
+        if secondary then
+            Recolor.serializeColor(secondary, buf)
+        end
+    end
+end
+
+---@param buf Buffer
+function Tintable:deserialize(buf)
+    self:equip()
+    --- So basically it will always send a color, but the client won't actually recalculate the piece's color unless it actually changed
+    --- Cause like what if a client misses it???
+    local primary, secondary
+    local options = self.options
+    if (options.tintMethod == "INDEXED") or (options.tintMethod == "PALETTE") then
+        local byte = buf:readShort()
+        primary = bit32.band(bit32.lshift(byte, 4), 0xFFFF)
+        secondary = bit32.band(byte, 0xFFFF)
+    else
+        local flag = buf:read()
+        if bit32.band(flag, 1) ~= 0 then primary = Recolor.deserializeColor(buf) end
+        if bit32.band(flag, 2) ~= 0 then secondary = Recolor.deserializeColor(buf) end
+    end
+    self:updateColor(primary, secondary)
+    return self
+end
+
+--#endregion Toast.Tintable
 
 return Recolor
