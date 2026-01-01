@@ -9,7 +9,6 @@
 ---| "RIGHT_HAND"
 ---| "PANTS"
 ---| "SHOES"
----| "MULTIPART"
 
 ---@class Toast.Piece
 ---@field options Toast.Piece.Options
@@ -18,10 +17,12 @@
 ---@field deserialize Toast.Deserializer<Toast.Piece>
 local Piece
 
-
 ---Loads all of the model parts into a table so that they can all be toggled
 ---when an outfit is read from the update ping.
+---@generic T
+---@param self T
 ---@param parts ModelPart[]
+---@return T
 function Piece:updateModelParts(parts) end
 
 ---Creates a new piece.
@@ -30,7 +31,7 @@ function Piece:updateModelParts(parts) end
 ---@param self T
 ---@param name string
 ---@param options O
----@return T
+---@return self
 function Piece.new(self, name, options) end
 
 ---Creates a copy of a piece
@@ -56,6 +57,7 @@ function Piece.equip(self) end
 ---@field modelParts ModelPart[] The model parts to use for the piece. This is used to determine what parts to toggle.
 
 ---@class Toast.TintablePiece: Toast.Piece
+---@field updateModelParts fun(self: self): self
 ---@field options Toast.Tintable.Options
 ---@field serialize Toast.Serializer
 ---@field deserialize Toast.Deserializer<Toast.TintablePiece>
@@ -68,11 +70,8 @@ local Tintable
 ---@field primary integer? The color applied to the part. Color is either a valid color type or an RGB value converted into an integer.
 ---@field secondary integer? The color applied to the part. Color is either a valid color type or an RGB value converted into an integer.
 
----@param self Toast.TintablePiece
----@param name string
----@param options Toast.Tintable.Options
----@return Toast.TintablePiece
-function Tintable:new(name, options) end
+---Resets the piece's UV and texture, so that those elements can be reused.
+function Tintable:reset() end
 
 ---@alias Toast.Multipiece Toast.Piece.Type[]
 
@@ -89,8 +88,61 @@ function Tintable:new(name, options) end
 ---@alias Toast.Serializer fun(self: self, buf: Buffer)
 ---@alias Toast.Deserializer<T> fun(self: self?, data: Buffer): T
 
+---@alias Toast.Outfit.Parser fun(self: self, name: string)
+
+
 ---@alias Toast.Piece.Type
 ---| Toast.Piece
 ---| Toast.TintablePiece
 
+---@alias Toast.Layer
+---| "PRIMARY"
+---| "SECONDARY"
+
+---@alias RGB Vector3 idk
+
+---A list of colors indexed by their hex value.
+---@alias Toast.Palette table<string, integer> | RGB[]
+
 ---@alias Toast.Colorable.TextureModifier fun(color: RGB, texture: Texture, bounds: Vector4, layer: Toast.Layer)
+
+---Literally just transfers the data to another client that's their problem now
+---
+---@param data string
+---@see Toast.Deserializer
+function pings.transfer(data) end
+
+--#region Toast.Recolor
+
+---@class Toast.Recolor
+local Recolor
+
+---Converts a color to 3 bytes and adds them to the buffer to be pinged.
+---@param hex RGB|integer
+---@param buf Buffer
+function Recolor.serializeColor(hex, buf) end
+
+---Deserializes the color from the buffer
+---@param buf Buffer
+---@return RGB
+function Recolor.deserializeColor(buf) end
+
+---Generates a random color.
+---@return RGB
+function Recolor.randomColor() end
+
+---Splits a texture into quadrants so that it doesn't eat tick instructions (deprecated in 0.1.6)
+---@param tex Texture
+---@param bounds Vector4
+---@param func Texture.applyFunc
+function Recolor.splitTexture(tex, bounds, func) end
+
+---Generates a palette from a starting color.
+---
+--- ! EXPERIMENTAL ! - I still need to tweak the values,
+--- and the colors produced are highly stylized to look like mine, so tweak this yourself for different results!
+---@param input RGB
+---@return Toast.Palette
+function Recolor.generatePalette(input) end
+
+--#endregion Toast.Recolor

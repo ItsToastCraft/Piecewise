@@ -16,7 +16,7 @@ local SKULL_OFFSETS = {
     LEFT_HAND = BODY_OFFSET,
     RIGHT_HAND = BODY_OFFSET,
     PANTS = EMPTY_VECTOR,
-    SHOES = EMPTY_VECTOR
+    SHOES = EMPTY_VECTOR,
 }
 
 --#endregion Toast.Defaults
@@ -37,7 +37,8 @@ end
 
 function Piece.new(self, name, options)
     options = options or {} ---@type Toast.Piece.Options
-    options.skullOffset = options.skullOffset or (options.part and SKULL_OFFSETS[options.part]) or EMPTY_VECTOR
+    options.skullOffset = options.skullOffset or (options.part and SKULL_OFFSETS[options.part]) or
+        EMPTY_VECTOR
     options.modelParts = options.modelParts or {}
     local inst = setmetatable({ name = name, options = options }, { __index = self })
     inst.id = #ALL_PIECES + 1
@@ -73,6 +74,7 @@ end
 
 function Piece:setUV()
     for _, value in pairs(self.options.modelParts) do
+        if not self.options.texture or self.options.bounds then break end -- Just stop
         if self.options.texture then
             value:setPrimaryTexture("CUSTOM", self.options.texture)
         end
@@ -86,6 +88,7 @@ function Piece:equip()
     Logger.debug(("%s has been equipped"):format(self.name))
     CURRENT_OUTFIT[self.id] = self
     self:setVisible(true)
+    self:setUV()
 end
 
 function Piece:unequip()
@@ -130,7 +133,6 @@ local function serializeOutfit(...)
     return output
 end
 
----@param data string
 function pings.transfer(data)
     if not host:isHost() then
         deserializePieces(data) --- The host already ran the operations
@@ -151,15 +153,15 @@ events.TICK:register(scheduledPing, "scheduledPing")
 
 --#region Toast.Outfit
 
-config:setName("Toast.Outfits_0.0.3")
-
----@alias Toast.Outfit.Parser fun(self: self, name: string)
+config:setName("Toast.Outfits")
+config:save("version", "0.0.3")
 
 local Outfit = {
-    cache = config:load("saved") or {},
+    cache = config:load("saved") or {}, ---@type table
     ---@type Toast.Outfit.Parser
     save = function(self, name)
         self.cache[name] = serializeOutfit(table.unpack(CURRENT_OUTFIT)) --- SHUT UP I KNOW WHAT'S IN THE TABLE
+        config:setName("Toast.Outfits")
         config:save("saved", self.cache)
         return self.cache[name]
     end,
@@ -170,10 +172,19 @@ local Outfit = {
             return
         end
         pings.transfer(self.cache[name])
-    end
+    end,
 }
 
 config:save("saved", Outfit.cache)
 
 --#endregion Toast.Outfit
+
+Piece.ALL = setmetatable({}, {
+    __index = ALL_PIECES, -- allow read access
+    __newindex = function(_, key, _)
+        error("Attempt to modify read-only table", 2)
+    end,
+    __pairs = function() return pairs(ALL_PIECES) end,
+    __ipairs = function() return ipairs(ALL_PIECES) end,
+})
 return Piece, Outfit
