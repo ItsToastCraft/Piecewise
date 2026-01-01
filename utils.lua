@@ -43,6 +43,12 @@ local function newLogger(name, color)
     })
 end
 
+function utils.transferElements(from, to)
+    for key, element in from do
+        to[key] = element
+    end
+end
+
 Logger.debug = newLogger("debug", "dark_aqua")
 Logger.info = newLogger("info", "green")
 Logger.warn = newLogger("warn", "yellow")

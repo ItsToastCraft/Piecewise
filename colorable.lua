@@ -1,10 +1,9 @@
-local runLater = require("utils").runLater
+local utils = require("utils")
 local Piece = require("piece")
 
 ---@class Toast.TintablePiece: Toast.Piece
-local Tintable = setmetatable({}, { __index = Piece.Piece })
+local Tintable = setmetatable({}, { __index = Piece })
 Tintable.__index = Tintable
-Piece.Tintable = Tintable
 --#region
 
 ---@generic K, V
@@ -22,6 +21,13 @@ end
 ---@alias Toast.Palette table<string, integer> | RGB[]
 
 --#region Toast.Defaults
+
+local INSTRUCTION_REGIONS = {
+    LOW = 8,
+    DEFAULT = 4,
+    HIGH = 2,
+    MAX = 1
+}
 
 local EMPTY_VECTOR = vec(0, 0, 0)
 
@@ -86,17 +92,22 @@ local Recolor = {}
 
 ---@param hex RGB|integer
 function Recolor.serializeColor(hex, buf)
-    if type(hex) == "number" then hex = vectors.intToRGB(hex) end ---@cast hex RGB
-    hex = (hex * 255):floor()
-    buf:write(hex.r)
-    buf:write(hex.g)
-    buf:write(hex.b)
+    if type(hex) == "Vector3" then hex = vectors.rgbToInt(hex) end ---@cast hex integer
+    buf:write(bit32.band(bit32.rshift(hex, 16), 0xFF))
+    buf:write(bit32.band(bit32.rshift(hex, 8), 0xFF))
+    buf:write(bit32.band(hex, 0xFF))
 end
 
 ---@param buf Buffer
 ---@return RGB
 function Recolor.deserializeColor(buf)
-    return vec(buf:read(), buf:read(), buf:read()) / 255
+    local col = vec(buf:read(), buf:read(), buf:read()) / 255
+    return col
+end
+
+---@return RGB
+function Recolor.randomColor()
+    return vec(math.random(), math.random(), math.random())
 end
 
 ---Splits a texture into 4 quadrants
@@ -104,17 +115,37 @@ end
 ---@param bounds Vector4
 ---@param func Texture.applyFunc
 local function splitTexture(tex, bounds, func)
+    local divisions = INSTRUCTION_REGIONS[avatar:getPermissionLevel()]
     local x, y, w, h = bounds:unpack()
-    ---(IF YOU DON'T SET A REGION PROPERLY, DISRESPECTFULLY EXPLODE CAUSE I DON'T WANNA SEE NO COMPLAINTS WHEN Y'ALL TRY TINTING A 256x256 TEXTURE LIKE IT'S NOTHING OK????)
-    local halfW, halfH = math.ceil(w / 2), math.ceil(h / 2)
 
-    for i = 0, 3 do
-        local ox = (i % 2) * halfW
-        local oy = math.floor(i / 2) * halfH
-        runLater(i * 2,
-            function() tex:applyFunc(x + ox, y + oy, halfW, halfH, func) end)
+    local cellW = math.floor(w / divisions)
+    local cellH = math.floor(h / divisions)
+
+    for i = 0, (divisions * divisions) - 1 do
+        local col = i % divisions
+        local row = math.floor(i / divisions)
+
+        local ox = col * cellW
+        local oy = row * cellH
+
+        -- last row/column absorbs remainder pixels
+        local cw = (col == divisions - 1) and (w - ox) or cellW
+        local ch = (row == divisions - 1) and (h - oy) or cellH
+
+        utils.runLater(i, function()
+            tex:applyFunc(x + ox, y + oy, cw, ch, func)
+        end)
     end
+
+    utils.runLater(divisions * divisions + 5, function()
+        tex:update()
+        host:setClipboard(tex:save())
+    end)
 end
+
+-- function vectors.hsvToHex(color)
+--     return vectors.rgbToHex(vectors.hsvToRGB(color))
+-- end
 
 ---Generates a palette from a starting color.
 ---
@@ -169,14 +200,15 @@ end
 -- end
 
 local function apply(color, inPalette, layer)
-    if inPalette[layer[vectors.rgbToHex(color.xyz)]] then
-        return vectors.hexToRGB(inPalette[layer[vectors.rgbToHex(color.xyz)]]):augmented(1)
+    local match = inPalette[layer[vectors.rgbToHex(color.xyz)]]
+    if match then
+        return match
     end
 end
 
 local function remap(color, tex, bounds, layer)
     local inPalette = type(color) == "table" and color or generatePalette(color)
-    splitTexture(tex, bounds, function(col) apply(col, inPalette, DEFAULT_MASK[layer]) end)
+    splitTexture(tex, bounds, function(col) return apply(col, inPalette, DEFAULT_MASK[layer]) end)
 end
 
 --#region Toast.Tintable
@@ -187,27 +219,48 @@ local tintMethods = {
         for _, modelPart in pairs(piece.options.modelParts) do
             modelPart:setColor(value)
         end
+        piece.options.primary = value
     end,
     RGB = function(piece, value, layer)
         remap(value, piece.options.texture, piece.options.bounds, layer)
+        piece.options[layer:lower()] = value
     end,
     PALETTE = function(piece, index, layer)
         if not piece.options.palette then return end --- That's on y'all smh I made the instructions clear
         remap(piece.options.palette[index], piece.options.texture, piece.options.bounds, layer)
+        piece.options[layer:lower()] = index
     end
 }
 
+
 function Tintable:new(name, options)
-    local inst = Piece.Piece.new(self, name, options)
+    local inst = Piece.new(self, name, options)
     inst.tint = tintMethods[inst.options.tintMethod] or tintMethods.SIMPLE
+    if options.tintMethod == "PALETTE" and not options.palette then
+        utils.Logger.warn("No palette found, reverting to SIMPLE tint mode.")
+        inst.tint = tintMethods.SIMPLE
+    end
     return inst
 end
 
+function Tintable:reset()
+    self.options.primary = 0
+    self.options.secondary = 0
+    self.options.texture:restore():update()
+end
+
 function Tintable:updateColor(primary, secondary)
+    self:reset()
+    self:setUV()
     for layer, value in pairs({ PRIMARY = primary, SECONDARY = secondary }) do
-        if type(value) == "Vector3" and value == EMPTY_VECTOR then goto continue end
+        if type(value) == "Vector3" and value == EMPTY_VECTOR then
+            goto continue
+        elseif type(value) == "number" then
+            value = vectors.intToRGB(value)
+        end
         if (value == self.options[layer:lower()]) then goto continue end
         self:tint(value, layer)
+
         ::continue::
     end
 end
@@ -256,4 +309,4 @@ end
 
 --#endregion Toast.Tintable
 
-return Recolor
+return Tintable, Recolor

@@ -1,6 +1,5 @@
 --#region Toast.Defaults
 local Logger = require("utils").Logger
-local bit32 = bit32
 
 local CURRENT_OUTFIT = {} ---@type Toast.Piece.Type[]
 local ALL_PIECES = {} ---@type Toast.Piece.Type[]
@@ -72,9 +71,26 @@ function Piece:setVisible(visible)
     return self
 end
 
+function Piece:setUV()
+    for _, value in pairs(self.options.modelParts) do
+        if self.options.texture then
+            value:setPrimaryTexture("CUSTOM", self.options.texture)
+        end
+        if self.options.bounds then
+            value:setUVPixels(self.options.bounds.xy)
+        end
+    end
+end
+
 function Piece:equip()
-    CURRENT_OUTFIT[#CURRENT_OUTFIT + 1] = self
+    Logger.debug(("%s has been equipped"):format(self.name))
+    CURRENT_OUTFIT[self.id] = self
     self:setVisible(true)
+end
+
+function Piece:unequip()
+    CURRENT_OUTFIT[self.id] = nil
+    self:setVisible(false)
 end
 
 --#region Toast.Piece
@@ -87,13 +103,15 @@ local function deserializePieces(str)
     for _, modelPart in pairs(ALL_MODEL_PARTS) do
         modelPart:setVisible(false)
     end
-
+    for id, piece in pairs(CURRENT_OUTFIT) do
+        piece:unequip()
+    end
     local buf = data:createBuffer(#str)
     buf:writeByteArray(str)
     buf:setPosition(0)
 
     repeat
-        local piece = ALL_PIECES[buf:read()]
+        local piece = ALL_PIECES[buf:readShort()]
         if not piece then break end --- Reading was somehow corrupted, will wait until the next sync ping
         piece:deserialize(buf)
     until buf:getPosition() >= #str
@@ -114,7 +132,9 @@ end
 
 ---@param data string
 function pings.transfer(data)
-    deserializePieces(data)
+    if not host:isHost() then
+        deserializePieces(data) --- The host already ran the operations
+    end
 end
 
 local timer = -20
@@ -141,6 +161,7 @@ local Outfit = {
     save = function(self, name)
         self.cache[name] = serializeOutfit(table.unpack(CURRENT_OUTFIT)) --- SHUT UP I KNOW WHAT'S IN THE TABLE
         config:save("saved", self.cache)
+        return self.cache[name]
     end,
     ---@type Toast.Outfit.Parser
     load = function(self, name)
@@ -154,8 +175,5 @@ local Outfit = {
 
 config:save("saved", Outfit.cache)
 
-Outfit:load("cheese")
-
-local __Piece = { Piece = Piece, Outfit = Outfit }
 --#endregion Toast.Outfit
-return __Piece
+return Piece, Outfit
