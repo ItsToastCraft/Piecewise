@@ -51,10 +51,10 @@ end
 
 function Piece.copy(self, name, options)
     local class = getmetatable(self).__index
-    local inst = class:new(name, options)
     for option, value in pairs(self.options) do --- Inherits properties from its copy
-        inst.options[option] = inst.options[option] or value
-    end
+            options[option] = options[option] or value
+        end
+    local inst = class:new(name, options)
     return inst
 end
 
@@ -76,7 +76,7 @@ end
 
 function Piece:setUV()
     for _, value in pairs(self.options.modelParts) do
-        if not self.options.texture or self.options.bounds then break end -- Just stop
+        if not (self.options.texture or self.options.bounds) then break end -- Just stop
         if self.options.texture then
             value:setPrimaryTexture("CUSTOM", self.options.texture)
         end
@@ -192,6 +192,5 @@ Piece.ALL = setmetatable({}, {
         error("Attempt to modify read-only table", 2)
     end,
     __pairs = function() return pairs(ALL_PIECES) end,
-    __ipairs = function() return ipairs(ALL_PIECES) end,
 })
 return Piece, Outfit
