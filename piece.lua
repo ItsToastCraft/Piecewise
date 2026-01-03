@@ -1,38 +1,9 @@
 --#region Toast.Defaults
-
-local Logger = { level = 0, levels = -1 } --- only shows warns in prod
-
-local function prettyPrint(name, color, text)
-    if not text then return end
-    printJson(toJson({
-        { text = ("[%s] "):format(name), color = color },
-        { text = avatar:getEntityName(), color = "white" },
-        { text = " : " .. text .. "\n",  color = color },
-    }))
-end
-
-local function newLogger(name, color)
-    Logger.levels = Logger.levels + 1
-    return setmetatable({ level = Logger.levels, name = name, color = color }, {
-        __call = function(t, text)
-            if (t.level >= Logger.level) then
-                prettyPrint(name, color, text)
-            end
-        end
-    })
-end
-
-local debug = newLogger("debug", "dark_aqua")
-local info = newLogger("info", "green")
-local warn = newLogger("warn", "yellow")
-
-local Recolor = pcall(require, "colorable") and require("colorable") or nil
-if not Recolor then warn("Colorable module not found, disabling Tintables!") end
-
-local bit32 = bit32
+local utils = require("utils")
+local Logger = utils.Logger
 
 local CURRENT_OUTFIT = {} ---@type Toast.Piece.Type[]
-local ALL_PIECES = {} ---@type Toast.Piece.Type[]
+local ALL_PIECES = { count = 0 } ---@type table<string, Toast.Piece.Type[]>
 local ALL_MODEL_PARTS = {} ---@type table<string, ModelPart>
 
 local EMPTY_VECTOR = vec(0, 0, 0)
@@ -46,7 +17,7 @@ local SKULL_OFFSETS = {
     LEFT_HAND = BODY_OFFSET,
     RIGHT_HAND = BODY_OFFSET,
     PANTS = EMPTY_VECTOR,
-    SHOES = EMPTY_VECTOR
+    SHOES = EMPTY_VECTOR,
 }
 
 --#endregion Toast.Defaults
@@ -67,11 +38,13 @@ end
 
 function Piece.new(self, name, options)
     options = options or {} ---@type Toast.Piece.Options
-    options.skullOffset = options.skullOffset or (options.part and SKULL_OFFSETS[options.part]) or EMPTY_VECTOR
+    options.skullOffset = options.skullOffset or (options.part and SKULL_OFFSETS[options.part]) or
+        EMPTY_VECTOR
     options.modelParts = options.modelParts or {}
     local inst = setmetatable({ name = name, options = options }, { __index = self })
-    inst.id = #ALL_PIECES + 1
+    inst.id = utils.stringHash(name)
     ALL_PIECES[inst.id] = inst
+    ALL_PIECES.count = ALL_PIECES.count + 1
     inst:updateModelParts(options.modelParts)
     return inst
 end
@@ -86,7 +59,7 @@ function Piece.copy(self, name, options)
 end
 
 function Piece:serialize(buf)
-    buf:writeShort(self.id)
+    buf:writeInt(self.id)
 end
 
 function Piece.deserialize(self)
@@ -101,103 +74,33 @@ function Piece:setVisible(visible)
     return self
 end
 
-function Piece:equip()
-    CURRENT_OUTFIT[#CURRENT_OUTFIT + 1] = self
-    self:setVisible(true)
-end
-
---#region Toast.Piece
-
---#region Toast.Tintable
-
----@class Toast.TintablePiece: Toast.Piece
-local Tintable = setmetatable({}, { __index = Piece })
-Tintable.__index = Tintable
-
----@type table<Toast.TintablePiece.Mode, Toast.TintablePiece.Method>
-local tintMethods = {
-    SIMPLE = function(piece, value)
-        for _, modelPart in pairs(piece.options.modelParts) do
-            modelPart:setColor(value)
+function Piece:setUV()
+    for _, value in pairs(self.options.modelParts) do
+        if not self.options.texture or self.options.bounds then break end -- Just stop
+        if self.options.texture then
+            value:setPrimaryTexture("CUSTOM", self.options.texture)
         end
-    end,
-    RGB = function(piece, value, layer)
-        Recolor.fromRGB(value, piece.options.texture, piece.options.bounds, layer)
-    end,
-    PALETTE = function(piece, index, layer)
-        if not piece.options.palette then return end --- That's on y'all smh I made the instructions clear
-        Recolor.remap(index, piece.options.texture, piece.options.bounds, layer)
-    end
-}
-
-function Tintable:new(name, options)
-    local inst = Piece.new(self, name, options)
-    inst.tint = tintMethods[inst.options.tintMethod] or tintMethods.SIMPLE
-    return inst
-end
-
-function Tintable:updateColor(primary, secondary)
-    for layer, value in pairs({ PRIMARY = primary, SECONDARY = secondary }) do
-        if type(value) == "Vector3" and value == EMPTY_VECTOR then goto continue end
-        if (value == self.options[layer:lower()]) then goto continue end
-        self:tint(value, layer)
-        ::continue::
-    end
-end
-
-function Tintable:serialize(buf)
-    Piece.serialize(self, buf)
-    local options = self.options
-
-    -- These wouldn't need hex codes, but rather table indices (using 1 byte for both, max 16 colors in palette)
-    -- If you need more, consider using HEX, or SIMPLE, as you can literally give it a hex
-    -- Or modify it to use a full byte
-    if (options.tintMethod == "INDEXED") or (options.tintMethod == "PALETTE") then
-        buf:write(bit32.bor(bit32.rshift(options.primary or 0, 4) or 0, options.secondary or 0))
-    else
-        local primary, secondary = options.primary, options.secondary
-        local flag = (primary ~= 0 and 1 or 0) + (secondary ~= 0 and 2 or 0)
-        buf:write(flag)
-        if primary then
-            Recolor.serializeColor(primary, buf)
-        end
-        if secondary then
-            Recolor.serializeColor(secondary, buf)
+        if self.options.bounds then
+            value:setUVPixels(self.options.bounds.xy)
         end
     end
-end
-
----@param buf Buffer
-function Tintable:deserialize(buf)
-    self:equip()
-    --- So basically it will always send a color, but the client won't actually recalculate the piece's color unless it actually changed
-    --- Cause like what if a client misses it???
-    local primary, secondary
-    local options = self.options
-    if (options.tintMethod == "INDEXED") or (options.tintMethod == "PALETTE") then
-        local byte = buf:readShort()
-        primary = bit32.band(bit32.lshift(byte, 4), 0xFFFF)
-        secondary = bit32.band(byte, 0xFFFF)
-    else
-        local flag = buf:read()
-        if bit32.band(flag, 1) ~= 0 then primary = Recolor.deserializeColor(buf) end
-        if bit32.band(flag, 2) ~= 0 then secondary = Recolor.deserializeColor(buf) end
-    end
-    self:updateColor(primary, secondary)
     return self
 end
 
-if not Recolor then
-    setmetatable(Tintable, {
-        __index = function(_, _)
-            warn(
-                "Tintables are disabled! To use them, install the Colorable module from the same Github Repository.")
-            return nil
-        end
-    })
+function Piece:equip()
+    Logger.debug(("%s has been equipped"):format(self.name))
+    CURRENT_OUTFIT[self.id] = self
+    self:setVisible(true):setUV()
+    return self
 end
---#endregion Toast.Tintable
 
+function Piece:unequip()
+    CURRENT_OUTFIT[self.id] = nil
+    self:setVisible(false)
+    return self
+end
+
+--#region Toast.Piece
 
 --#region Toast.Serialized
 
@@ -207,22 +110,28 @@ local function deserializePieces(str)
     for _, modelPart in pairs(ALL_MODEL_PARTS) do
         modelPart:setVisible(false)
     end
-
+    for _, piece in pairs(CURRENT_OUTFIT) do
+        piece:unequip()
+    end
     local buf = data:createBuffer(#str)
     buf:writeByteArray(str)
     buf:setPosition(0)
 
-    repeat
-        local piece = ALL_PIECES[buf:read()]
+    for _ = 1, ALL_PIECES.count do
+        local piece = ALL_PIECES[buf:readInt()]
         if not piece then break end --- Reading was somehow corrupted, will wait until the next sync ping
         piece:deserialize(buf)
-    until buf:getPosition() >= #str
+        if buf:available() == 0 then break end
+    end
+    buf:close()
 end
 
----@param ... Toast.Piece.Type
-local function serializeOutfit(...)
+---@param pieces Toast.Piece.Type[]
+local function serializeOutfit(pieces)
     local buf = data:createBuffer(256)
-    for _, piece in pairs({ ... }) do
+    for _, piece in pairs(pieces) do
+        Logger.debug("Deserializing", piece.id)
+        ---@cast piece Toast.Piece.Type
         piece:serialize(buf)
     end
     buf:setPosition(0)
@@ -231,21 +140,19 @@ local function serializeOutfit(...)
     return output
 end
 
----@param data string
 function pings.transfer(data)
-    deserializePieces(data)
+    if not host:isHost() then
+        deserializePieces(data) --- The host already ran the operations
+    end
 end
 
 local timer = -20
 local function scheduledPing()
     timer = timer + 1
-    if timer % 100 == 0 then
-        pings.transfer(serializeOutfit(table.unpack(CURRENT_OUTFIT)))
+    if timer % 120 == 0 then
+        pings.transfer(serializeOutfit(CURRENT_OUTFIT))
     end
 end
-
-local tint = Tintable:new("hello", { primary = 0x973131 })
-tint:equip()
 
 events.TICK:register(scheduledPing, "scheduledPing")
 
@@ -253,31 +160,38 @@ events.TICK:register(scheduledPing, "scheduledPing")
 
 --#region Toast.Outfit
 
-config:setName("Toast.Outfits_0.0.3")
-
-
----@alias Toast.Outfit.Parser fun(self: self, name: string)
+config:setName("Toast.Outfits")
+config:save("version", "0.0.3")
 
 local Outfit = {
-    cache = config:load("saved") or {},
+    cache = config:load("saved") or {}, ---@type table
     ---@type Toast.Outfit.Parser
     save = function(self, name)
-        self.cache[name] = serializeOutfit(table.unpack(CURRENT_OUTFIT)) --- SHUT UP I KNOW WHAT'S IN THE TABLE
+        self.cache[name] = serializeOutfit(CURRENT_OUTFIT) --- SHUT UP I KNOW WHAT'S IN THE TABLE
+        config:setName("Toast.Outfits")
         config:save("saved", self.cache)
+        return self.cache[name]
     end,
     ---@type Toast.Outfit.Parser
     load = function(self, name)
         if not self.cache[name] then
-            warn(("No outfit found with name '%s'"):format(name))
+            Logger.debug(("No outfit found with name '%s', ignoring"):format(name))
             return
         end
         pings.transfer(self.cache[name])
-    end
+    end,
 }
 
 config:save("saved", Outfit.cache)
 
-Outfit:load("cheese")
-
 --#endregion Toast.Outfit
-return { Piece = Piece, Tintable = Tintable, Outfit = Outfit }
+
+Piece.ALL = setmetatable({}, {
+    __index = ALL_PIECES, -- allow read access
+    __newindex = function(_, key, _)
+        error("Attempt to modify read-only table", 2)
+    end,
+    __pairs = function() return pairs(ALL_PIECES) end,
+    __ipairs = function() return ipairs(ALL_PIECES) end,
+})
+return Piece, Outfit
