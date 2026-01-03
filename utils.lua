@@ -35,14 +35,12 @@ local function prettyPrint(name, color, ...)
     }
     for _, value in ipairs({ ... }) do
         if type(value) ~= "string" then value = tostring(value) end
-        print(value)
         table.insert(json, { text = value .. " ", color = color })
     end
     table.insert(json, { text = "\n" })
-    printJson(toJson(json))
 end
 
-local Logger = { level = 0, levels = -1 } --- only shows warns in prod
+local Logger = { level = 2, levels = -1 } --- only shows warns in prod
 
 local function newLogger(name, color)
     Logger.levels = Logger.levels + 1
@@ -60,6 +58,15 @@ function utils.transferElements(from, to)
     for key, element in from do
         to[key] = element
     end
+end
+
+function utils.stringHash(str)
+    local hash = 0x811C9DC5
+    for i = 1, #str do
+        hash = bit32.bxor(hash, str:byte(i))
+        hash = (hash * 0x01000193) % 0xFFFFFFFF
+    end
+    return bit32.band(hash, 0xFFFFFF)
 end
 
 ---@generic K, V

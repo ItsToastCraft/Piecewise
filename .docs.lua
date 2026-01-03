@@ -80,8 +80,8 @@ function Tintable:reset() end
 ---Modes used for tinting.
 ---@alias Toast.TintablePiece.Mode
 ---| "SIMPLE" Uses simple (:setColor()) method for recoloring
----| "RGB" Uses an RGB value given by the user.
----| "INDEXED" Uses a premade 16 color palette.
+---| "COLOR" Uses an RGB value given by the user.
+---| "INDEXED" Uses a premade 16 color palette. ! NOT USED CURRENTLY THIS IS GOING TO BE YOUR FAULT !
 ---| "PALETTE" Uses a custom palette. The piece __must__ have `palette` defined in its options.
 
 

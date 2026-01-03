@@ -1,8 +1,9 @@
 --#region Toast.Defaults
-local Logger = require("utils").Logger
+local utils = require("utils")
+local Logger = utils.Logger
 
 local CURRENT_OUTFIT = {} ---@type Toast.Piece.Type[]
-local ALL_PIECES = {} ---@type Toast.Piece.Type[]
+local ALL_PIECES = { count = 0 } ---@type table<string, Toast.Piece.Type[]>
 local ALL_MODEL_PARTS = {} ---@type table<string, ModelPart>
 
 local EMPTY_VECTOR = vec(0, 0, 0)
@@ -41,8 +42,9 @@ function Piece.new(self, name, options)
         EMPTY_VECTOR
     options.modelParts = options.modelParts or {}
     local inst = setmetatable({ name = name, options = options }, { __index = self })
-    inst.id = #ALL_PIECES + 1
+    inst.id = utils.stringHash(name)
     ALL_PIECES[inst.id] = inst
+    ALL_PIECES.count = ALL_PIECES.count + 1
     inst:updateModelParts(options.modelParts)
     return inst
 end
@@ -57,7 +59,7 @@ function Piece.copy(self, name, options)
 end
 
 function Piece:serialize(buf)
-    buf:writeShort(self.id)
+    buf:writeInt(self.id)
 end
 
 function Piece.deserialize(self)
@@ -82,18 +84,20 @@ function Piece:setUV()
             value:setUVPixels(self.options.bounds.xy)
         end
     end
+    return self
 end
 
 function Piece:equip()
     Logger.debug(("%s has been equipped"):format(self.name))
     CURRENT_OUTFIT[self.id] = self
-    self:setVisible(true)
-    self:setUV()
+    self:setVisible(true):setUV()
+    return self
 end
 
 function Piece:unequip()
     CURRENT_OUTFIT[self.id] = nil
     self:setVisible(false)
+    return self
 end
 
 --#region Toast.Piece
@@ -106,25 +110,28 @@ local function deserializePieces(str)
     for _, modelPart in pairs(ALL_MODEL_PARTS) do
         modelPart:setVisible(false)
     end
-    for id, piece in pairs(CURRENT_OUTFIT) do
+    for _, piece in pairs(CURRENT_OUTFIT) do
         piece:unequip()
     end
     local buf = data:createBuffer(#str)
     buf:writeByteArray(str)
     buf:setPosition(0)
 
-    repeat
-        local piece = ALL_PIECES[buf:readShort()]
+    for _ = 1, ALL_PIECES.count do
+        local piece = ALL_PIECES[buf:readInt()]
         if not piece then break end --- Reading was somehow corrupted, will wait until the next sync ping
         piece:deserialize(buf)
-    until buf:getPosition() >= #str
+        if buf:available() == 0 then break end
+    end
     buf:close()
 end
 
----@param ... Toast.Piece.Type
-local function serializeOutfit(...)
+---@param pieces Toast.Piece.Type[]
+local function serializeOutfit(pieces)
     local buf = data:createBuffer(256)
-    for _, piece in pairs({ ... }) do
+    for _, piece in pairs(pieces) do
+        Logger.debug("Deserializing", piece.id)
+        ---@cast piece Toast.Piece.Type
         piece:serialize(buf)
     end
     buf:setPosition(0)
@@ -142,8 +149,8 @@ end
 local timer = -20
 local function scheduledPing()
     timer = timer + 1
-    if timer % 100 == 0 then
-        pings.transfer(serializeOutfit(table.unpack(CURRENT_OUTFIT)))
+    if timer % 120 == 0 then
+        pings.transfer(serializeOutfit(CURRENT_OUTFIT))
     end
 end
 
@@ -160,7 +167,7 @@ local Outfit = {
     cache = config:load("saved") or {}, ---@type table
     ---@type Toast.Outfit.Parser
     save = function(self, name)
-        self.cache[name] = serializeOutfit(table.unpack(CURRENT_OUTFIT)) --- SHUT UP I KNOW WHAT'S IN THE TABLE
+        self.cache[name] = serializeOutfit(CURRENT_OUTFIT) --- SHUT UP I KNOW WHAT'S IN THE TABLE
         config:setName("Toast.Outfits")
         config:save("saved", self.cache)
         return self.cache[name]

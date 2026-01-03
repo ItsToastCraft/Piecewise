@@ -70,13 +70,23 @@ function Recolor.splitTexture(tex, bounds, func)
 
     utils.runLater(divisions * divisions + 5, function()
         tex:update()
-        host:setClipboard(tex:save())
     end)
+end
+
+function Recolor.mapHexToRGB(palette)
+    for key, value in pairs(palette) do
+        palette[key] = vectors.hexToRGB(value):augmented(1)
+    end
 end
 
 ---Actually quite proud of this
 function Recolor.generatePalette(input)
-    local palette = { input:augmented(1) }
+    if type(input) == "number" then
+        input = vectors.intToRGB(input)
+    elseif type(input) == "Vector3" then
+        input = input:augmented(1)
+    end
+    local palette = { input }
     local color = vectors.rgbToHSV(palette[1].xyz)
 
     local hueOffset, satOffset, valueOffset = 1, 1, 1
@@ -117,10 +127,6 @@ function Recolor.generatePalette(input)
     return palette
 end
 
--- for color, initial in pairs(DEFAULT_PALETTE) do
---     DEFAULT_PALETTE[color] = generatePalette(vectors.hexToRGB(initial[1])) ---@diagnostic disable-line
--- end
-
 local function apply(color, inPalette, layer)
     local match = inPalette[layer[vectors.rgbToHex(color.xyz)]]
     if match then
@@ -144,7 +150,7 @@ local tintMethods = {
         end
         piece.options.primary = value
     end,
-    RGB = function(piece, value, layer)
+    COLOR = function(piece, value, layer)
         remap(value, piece.options.texture, piece.options.bounds, layer)
         piece.options[layer:lower()] = value
     end,
@@ -156,11 +162,17 @@ local tintMethods = {
 }
 
 function Tintable:new(name, options)
+    options.primary = 0
+    options.secondary = 0
     local inst = Piece.new(self, name, options) ---@cast inst Toast.TintablePiece
     inst.tint = tintMethods[inst.options.tintMethod] or tintMethods.SIMPLE
     if options.tintMethod == "PALETTE" and not options.palette then
         utils.Logger.warn("No palette found, reverting to SIMPLE tint mode.")
         inst.tint = tintMethods.SIMPLE
+    elseif options.palette and type(options.palette[1][1]) == "string" then
+        for _, value in ipairs(options.palette) do
+            Recolor.mapHexToRGB(value)
+        end
     end
     return inst
 end
@@ -171,24 +183,28 @@ function Tintable:reset()
     self.options.texture:restore():update()
 end
 
-function Tintable:updateColor(primary, secondary)
+function Tintable:setColor(primary, secondary)
     self:setUV()
     local reset = false
     for layer, value in pairs({ PRIMARY = primary, SECONDARY = secondary }) do
-        if type(value) == "Vector3" and value == EMPTY_VECTOR then
+        if not value then
             goto continue
-        elseif type(value) == "number" then
+        elseif type(value) == "Vector3" and value == EMPTY_VECTOR then
+            goto continue
+        elseif type(value) == "number" and self.options.tintMethod == "COLOR" then
             value = vectors.intToRGB(value)
         end
+
         if (value == self.options[layer:lower()]) then goto continue end
         if not reset then
             self:reset()
             reset = not reset
         end
-        self:tint(value, layer)
 
+        self:tint(value, layer)
         ::continue::
     end
+    return self
 end
 
 function Tintable:serialize(buf)
@@ -199,15 +215,15 @@ function Tintable:serialize(buf)
     -- If you need more, consider using HEX, or SIMPLE, as you can literally give it a hex
     -- Or modify it to use a full byte
     if (options.tintMethod == "INDEXED") or (options.tintMethod == "PALETTE") then
-        buf:write(bit32.bor(bit32.rshift(options.primary or 0, 4) or 0, options.secondary or 0))
+        buf:write(bit32.bor(bit32.lshift(options.primary or 0, 4) or 0, options.secondary or 0))
     else
         local primary, secondary = options.primary, options.secondary
         local flag = (primary ~= 0 and 1 or 0) + (secondary ~= 0 and 2 or 0)
         buf:write(flag)
-        if primary then
+        if primary ~= 0 then
             Recolor.serializeColor(primary, buf)
         end
-        if secondary then
+        if secondary ~= 0 then
             Recolor.serializeColor(secondary, buf)
         end
     end
@@ -222,14 +238,14 @@ function Tintable:deserialize(buf)
     local options = self.options
     if (options.tintMethod == "INDEXED") or (options.tintMethod == "PALETTE") then
         local byte = buf:read()
-        primary = bit32.band(bit32.lshift(byte, 4), 0xFFFF)
-        secondary = bit32.band(byte, 0xFFFF)
+        primary = bit32.band(bit32.rshift(byte, 4), 0xF)
+        secondary = bit32.band(byte, 0xF)
     else
         local flag = buf:read()
         if bit32.band(flag, 1) ~= 0 then primary = Recolor.deserializeColor(buf) end
         if bit32.band(flag, 2) ~= 0 then secondary = Recolor.deserializeColor(buf) end
     end
-    self:updateColor(primary, secondary)
+    self:setColor(primary, secondary)
     return self
 end
 
