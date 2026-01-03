@@ -192,7 +192,6 @@ Piece.ALL = setmetatable({}, {
     __newindex = function(_, key, _)
         error("Attempt to modify read-only table", 2)
     end,
-    __pairs = function() return pairs(ALL_PIECES) end,
-    __ipairs = function() return ipairs(ALL_PIECES) end,
+    __pairs = function() return pairs(ALL_PIECES) end
 })
 return Piece, Outfit
