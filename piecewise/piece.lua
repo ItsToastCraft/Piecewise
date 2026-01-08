@@ -1,5 +1,5 @@
 --#region Toast.Defaults
-local utils = require("utils")
+local utils = require("./piecewise_utils")
 local Logger = utils.Logger
 
 local CURRENT_OUTFIT = {} ---@type Toast.Piece.Type[]
@@ -52,8 +52,8 @@ end
 function Piece.copy(self, name, options)
     local class = getmetatable(self).__index
     for option, value in pairs(self.options) do --- Inherits properties from its copy
-            options[option] = options[option] or value
-        end
+        options[option] = options[option] or value
+    end
     local inst = class:new(name, options)
     return inst
 end

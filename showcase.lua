@@ -1,5 +1,4 @@
-local Tintable, Recolor = require("tintable")
-local Piece, Outfit = require("piece")
+local Tintable, Recolor = require("piecewise.tintable")
 
 vanilla_model.PLAYER:setVisible(false)
 local outfitModel = models.model.Outfit
