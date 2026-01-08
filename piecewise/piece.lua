@@ -1,5 +1,5 @@
 --#region Toast.Defaults
-local utils = require("utils")
+local utils = require("./piecewise_utils")
 local Logger = utils.Logger
 
 local CURRENT_OUTFIT = {} ---@type Toast.Piece.Type[]

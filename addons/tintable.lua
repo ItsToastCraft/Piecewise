@@ -1,4 +1,4 @@
-local utils = require("utils")
+local utils = require("./piecewise_utils")
 local Piece = require("piece")
 
 ---@class Toast.TintablePiece: Toast.Piece
