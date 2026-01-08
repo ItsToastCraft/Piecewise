@@ -1,7 +1,6 @@
 {
-  "name": "waawa",
-  "description": "",
-  "authors": [""],
-  "autoscripts": ["piece", "colorable"],
+  "name": "Piecewise Example with Tintables",
+  "description": "Creates two tintables that swap every 6 seconds with a random color applied.",
+  "authors": ["ToastTextures"],
   "color": "#a672ef"
 }
