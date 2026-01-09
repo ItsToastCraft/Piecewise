@@ -25,7 +25,9 @@ local SKULL_OFFSETS = {
 --#region Toast.Piece
 
 ---@class Toast.Piece
-local Piece = {}
+local Piece = {
+    type = "Piece",
+}
 Piece.__index = Piece
 
 function Piece:updateModelParts(parts)
@@ -192,6 +194,6 @@ Piece.ALL = setmetatable({}, {
     __newindex = function(_, key, _)
         error("Attempt to modify read-only table", 2)
     end,
-    __pairs = function() return pairs(ALL_PIECES) end
+    __pairs = function() return pairs(ALL_PIECES) end,
 })
 return Piece, Outfit
