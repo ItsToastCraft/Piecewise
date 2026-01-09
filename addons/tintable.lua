@@ -2,7 +2,7 @@ local utils = require("./piecewise_utils")
 local Piece = require("./piece")
 
 ---@class Toast.TintablePiece: Toast.Piece
-local Tintable = setmetatable({ type = "Tintable" }, { __index = Piece })
+local Tintable = setmetatable({}, { __index = Piece })
 Tintable.__index = Tintable
 
 --#region Toast.Defaults
