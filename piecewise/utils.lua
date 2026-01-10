@@ -1,11 +1,9 @@
+---@class Toast.Utils
 local utils = {}
 
 ---- Run Later by manuel_2867 ----
 local tmrs = {}
 local t = 0
----Schedules a function to run after a certain amount of ticks
----@param ticks number|function Amount of ticks to wait, or a predicate function to check each tick until it returns true
----@param next function Function to run after amount of ticks, or after the predicate function returned true
 function utils.runLater(ticks, next)
     local x = type(ticks) == "number"
     table.insert(tmrs, { t = x and t + ticks, p = x and function() end or ticks, n = next })
@@ -42,7 +40,7 @@ end
 
 local Logger = { level = 2, levels = -1 } --- only shows warns in prod
 
-local function newLogger(name, color)
+function utils.newLogger(name, color)
     Logger.levels = Logger.levels + 1
     return setmetatable({ level = Logger.levels, name = name, color = color }, {
         __call = function(tab, ...)
@@ -69,9 +67,6 @@ function utils.stringHash(str)
     return bit32.band(hash, 0xFFFFFF)
 end
 
----@generic K, V
----@param tab table<K, V>
----@return { [V]: K }
 function utils.swapValues(tab)
     local output = {}
     for id, name in pairs(tab) do
@@ -80,9 +75,9 @@ function utils.swapValues(tab)
     return output
 end
 
-Logger.debug = newLogger("debug", "dark_aqua")
-Logger.info = newLogger("info", "green")
-Logger.warn = newLogger("warn", "yellow")
+Logger.debug = utils.newLogger("debug", "dark_aqua")
+Logger.info = utils.newLogger("info", "green")
+Logger.warn = utils.newLogger("warn", "yellow")
 
 utils.Logger = Logger
 
