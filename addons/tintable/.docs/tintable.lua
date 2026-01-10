@@ -2,7 +2,7 @@
 
 ---@class Toast.Tintable.Options : Toast.Piece.Options
 ---@field tintMethod Toast.Tintable.Mode
----@field palette Toast.Palette[]? The palette to use for tinting. This is only used if the tintType is "palette".
+---@field palette Toast.Recolor.Palette[]? The palette to use for tinting. This is only used if the tintType is "palette".
 ---@field primary integer? The color applied to the part. Color is either a valid color type or an RGB value converted into an integer.
 ---@field secondary integer? The color applied to the part. Color is either a valid color type or an RGB value converted into an integer.
 
@@ -21,7 +21,7 @@ local Tintable
 ---@param name string The name of the new piece.
 ---@param options Toast.Tintable.Options 
 ---@return self
-function Tintable:new() end
+function Tintable:new(name, options) end
 
 ---Creates a copy of a piece, using the original piece as defaults
 ---@param name string The name of the new piece.

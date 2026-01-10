@@ -41,7 +41,7 @@ function Piece:new(name, options)
     options = options or {} ---@type Toast.Piece.Options
     options.skullOffset = options.skullOffset or (options.part and SKULL_OFFSETS[options.part]) or EMPTY_VECTOR
     options.modelParts = options.modelParts or {}
-    local inst = setmetatable({ name = name, options = options }, { __index = self })
+    local inst = setmetatable({ name = name, options = options, onToggle = {}}, { __index = self })
     inst.id = utils.stringHash(name)
     ALL_PIECES[inst.id] = inst
     ALL_PIECES.count = ALL_PIECES.count + 1
@@ -191,14 +191,14 @@ function Outfit:load(name)
         Logger.debug(("No outfit found with name '%s', ignoring"):format(name))
         return
     end
-    pings.transfer(self.cache[name])
+    pings.updateOutfit(self.cache[name])
 end
 
 local timer = -20
 local function scheduledPing()
     timer = timer + 1
     if timer % 80 == 0 then
-        pings.transfer(Outfit.serialize(CURRENT_OUTFIT))
+        pings.updateOutfit(Outfit.serialize(CURRENT_OUTFIT))
     end
 end
 
