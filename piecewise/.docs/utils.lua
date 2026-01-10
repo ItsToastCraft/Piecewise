@@ -23,5 +23,10 @@ function utils.stringHash(str) end
 ---@return { [V]: K }
 function utils.swapValues(tab) end
 
+---@alias Toast.Logger fun(...)
+
 ---Creates a new logger.
+---@param name any
+---@param color any
+---@return Toast.Logger
 function utils.newLogger(name, color) end
