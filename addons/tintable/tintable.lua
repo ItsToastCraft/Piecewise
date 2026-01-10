@@ -151,4 +151,4 @@ end
 
 --#endregion Toast.Tintable
 
-return Tintable, Recolor
+return Tintable
