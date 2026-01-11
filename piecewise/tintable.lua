@@ -79,6 +79,13 @@ function Tintable:reset()
     end
 end
 
+function Tintable:simplify()
+    local simplified = Piece.simplify(self)
+    simplified.primary = self.options.primary and Recolor.remapTo(self.options.primary, "RGB")
+    simplified.secondary = self.options.secondary and Recolor.remapTo(self.options.secondary, "RGB")
+    return simplified
+end
+
 function Tintable:setColor(primary, secondary)
     self:setUV()
     local reset = false

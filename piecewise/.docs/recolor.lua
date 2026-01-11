@@ -1,6 +1,6 @@
 ---@meta _ 
 
----@alias Toast.Recolor.Palette table<Vector4, integer> | Vector4[]
+---@alias Toast.Recolor.Palette table<Vector4, integer> | Toast.Recolor.Remappable[]
 
 ---@alias Toast.Recolor.RemapMode
 ---| "RGB"

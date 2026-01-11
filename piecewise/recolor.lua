@@ -66,11 +66,11 @@ local remapModes = {
 
 function Recolor.remapTo(value, mode)
     local valType = type(value)
-    ---@type Toast.Recolor.RemapMode?
-    local valMode = (valType == "number" and "INT") or (valType == "Vector3" and "RGB") or (valType == "string" and "HEX") or nil
+    local valMode = (valType == "number" and "INT") or (valType == "Vector3" and "RGB") or (valType == "string" and "HEX") or nil ---@type Toast.Recolor.RemapMode?
     if not valMode then error("Wtf are you trying to remap???") end
+
     if valMode == mode then return value end
-    return remapModes[mode][valMode]
+    return remapModes[mode][valMode](value)
 end
 function Recolor.mapPaletteToRGB(palette)
     for key, value in pairs(palette) do
